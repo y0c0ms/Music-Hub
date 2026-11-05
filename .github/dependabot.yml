@@ -1,5 +1,5 @@
-# Weekly dependency updates, grouped so a week produces a handful of PRs rather
-# than dozens. A version must have been public for 7 days before it is proposed:
+# Weekly dependency updates, grouped so a week produces at most two PRs per
+# ecosystem (minor/patch, and major) rather than one per package. A version must have been public for 7 days before it is proposed:
 # hijacked releases are usually caught and yanked within that window. Security
 # updates are separate and not delayed (repository setting).
 # Every update PR runs the full CI gate before it can merge.
@@ -14,6 +14,8 @@ updates:
     groups:
       rust-minor-patch:
         update-types: [minor, patch]
+      rust-major:
+        update-types: [major]
     labels: [dependencies, rust]
 
   - package-ecosystem: npm
@@ -25,6 +27,8 @@ updates:
     groups:
       web-minor-patch:
         update-types: [minor, patch]
+      web-major:
+        update-types: [major]
     labels: [dependencies, javascript]
 
   - package-ecosystem: npm
@@ -36,11 +40,16 @@ updates:
     groups:
       android-minor-patch:
         update-types: [minor, patch]
+      android-major:
+        update-types: [major]
     labels: [dependencies, android]
 
   - package-ecosystem: gradle
     directory: /android-shell/android
     schedule: {interval: monthly}
+    groups:
+      gradle:
+        patterns: ["*"]
     cooldown:
       default-days: 7
     open-pull-requests-limit: 3
@@ -59,6 +68,9 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly, day: monday}
+    groups:
+      docker:
+        patterns: ["*"]
     cooldown:
       default-days: 7
     labels: [dependencies, docker]
