@@ -24,9 +24,6 @@ on:
 jobs:
   gates:
     uses: ./.forgejo/workflows/ci.yml
-    # The gates clone the private repo with the job token, which a called
-    # workflow only receives when the caller passes its secrets down.
-    secrets: inherit
 
   publish:
     needs: gates

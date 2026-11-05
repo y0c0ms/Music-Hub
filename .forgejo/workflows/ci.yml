@@ -37,7 +37,7 @@ jobs:
       # passed as a header so it never lands in .git/config or the log.
       - name: checkout
         env:
-          JOB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_TOKEN: ${{ github.token }}
         run: |
           auth=$(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 -w0)
           git -c http.extraHeader="Authorization: Basic $auth" clone --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" src
