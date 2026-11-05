@@ -51,6 +51,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         books,
         discovery,
     };
+    // Index the library once at startup, in the background. Nothing else scans
+    // a library that was copied in by hand: scans otherwise run only after a
+    // download or through the internal API, so a fresh install showed an empty
+    // app. Files already indexed are skipped by (mtime, size), so on a warm
+    // restart this is one directory walk.
+    let startup = state.clone();
+    tokio::spawn(async move {
+        match mh_server::scan::scan(&startup).await {
+            Ok(r) => tracing::info!(
+                indexed = r.indexed,
+                scanned = r.scanned,
+                "startup scan done"
+            ),
+            Err(e) => tracing::warn!(error = %e, "startup scan failed"),
+        }
+    });
     let app = build_router(state);
 
     let listener = TcpListener::bind(&addr).await?;
