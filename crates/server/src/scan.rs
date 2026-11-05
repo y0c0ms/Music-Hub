@@ -349,6 +349,31 @@ mod tests {
         assert_eq!(collapse_single_album("A PIOR MUSICA", "a pior musica"), "");
     }
 
+    /// The server must keep serving when its first scan fails (database down
+    /// at boot, music folder unmounted): the failure is logged and the task
+    /// ends, it does not panic the runtime.
+    #[tokio::test]
+    async fn a_failed_startup_scan_returns_instead_of_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = mh_core::Config::load(|k| match k {
+            "OIDC_ISSUER" => Some("https://idp.invalid".to_owned()),
+            "OIDC_CLIENT_SECRET" => Some("s".to_owned()),
+            "DATABASE_URL" => Some("postgres://nobody@127.0.0.1:1/none".to_owned()),
+            "MUSIC_ROOT" | "STATE_DIR" => Some(dir.path().to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(300))
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .unwrap();
+        let task = tokio::spawn(startup_scan(crate::AppState::for_test(cfg, pool)));
+        assert!(
+            task.await.is_ok(),
+            "startup scan panicked on an unreachable database"
+        );
+    }
+
     #[test]
     fn a_real_album_survives_even_when_we_own_one_track_of_it() {
         // THE case this must not break. We own one Keane song; "Hopes And Fears"

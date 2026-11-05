@@ -25,6 +25,18 @@ updates:
     groups:
       web-minor-patch:
         update-types: [minor, patch]
+    # Svelte 5 and the Vite versions that require it are a code migration, not
+    # a bump: with svelte 5.57 + vite 8.3 the build succeeds but the app renders
+    # blank (runtime error effect_orphan). Security updates are not affected.
+    ignore:
+      - dependency-name: svelte
+        update-types: [version-update:semver-major]
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types: [version-update:semver-major]
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+      - dependency-name: vite-plugin-pwa
+        update-types: [version-update:semver-major]
     labels: [dependencies, javascript]
 
   - package-ecosystem: npm

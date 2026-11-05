@@ -120,11 +120,15 @@ jobs:
         run: python -m pip install diff-cover==10.6.0
 
       # Lines changed relative to main must be at least 95% covered.
+      # crates/bin/src/main.rs is excluded: it only wires the library together
+      # and starts the server, no test runs it, and every behaviour it starts
+      # lives (and is tested) in mh-server.
       - name: new-code coverage gate
         if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
         run: >
           diff-cover coverage/rust.lcov coverage/js/lcov.info
           --compare-branch=origin/main --fail-under=95
+          --exclude crates/bin/src/main.rs
 
       - name: upload coverage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
