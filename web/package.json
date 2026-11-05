@@ -25,7 +25,7 @@
     "lucide-svelte": "^0.354.0"
   },
   "dependencies": {
-    "@capacitor/app": "^6.0.3",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^6.2.1",
     "@jofr/capacitor-media-session": "^4.0.0"
   },
