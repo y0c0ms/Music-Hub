@@ -84,12 +84,12 @@ fn derive_library(music_root: &str, abs_path: &str) -> (LibraryInfo, String) {
                         name: name.to_owned(),
                         kind: "user",
                         // LOWERCASED, and this is load-bearing. The owner comes
-                        // from a DIRECTORY NAME (`/music/users/Alice/downloads`)
-                        // while the session username comes from the OIDC
-                        // provider (`alice`), and visibility is
-                        // `l.owner = $username` - a case-sensitive comparison.
-                        // Mismatched, a user sees only the shared library and
-                        // almost none of their own tracks. The display name keeps
+                        // from a DIRECTORY NAME (`/music/users/Sinem/downloads`)
+                        // while the session username comes from Keycloak
+                        // (`sinem`), and visibility is `l.owner = $username` - a
+                        // case-sensitive comparison. Mismatched, a user sees only
+                        // the shared library: measured after the cutover, Sinem
+                        // could see 36 tracks of her 280. The display name keeps
                         // the original case; only the identity is normalised.
                         owner: name.to_lowercase(),
                     },
@@ -306,6 +306,24 @@ pub async fn scan(state: &AppState) -> Result<ScanReport, AppError> {
     })
 }
 
+/// Index the library once at startup and log the result; the binary spawns it.
+///
+/// Nothing else scans a library copied in by hand: scans otherwise run only
+/// after a download or through `/api/internal/scan`, so a fresh install showed
+/// an empty app. Files already indexed are skipped by (mtime, size), so on a
+/// warm restart this is one directory walk. A failure is logged, not fatal:
+/// the server is still useful and the next download scans again.
+pub async fn startup_scan(state: AppState) {
+    match scan(&state).await {
+        Ok(r) => tracing::info!(
+            indexed = r.indexed,
+            scanned = r.scanned,
+            "startup scan done"
+        ),
+        Err(e) => tracing::warn!(error = %e, "startup scan failed"),
+    }
+}
+
 /// `POST /api/library/scan` — rescan the library. Behind `require`; the session
 /// is not used because the index is global.
 ///
@@ -448,9 +466,13 @@ mod tests {
         let cfg = Config::load(|k| env.get(k).cloned()).unwrap();
         let app = AppState::for_test(cfg, pool.clone());
 
-        let report = scan(&app).await.unwrap();
-        assert_eq!(report.indexed, 1);
-        assert_eq!(report.deleted, 0);
+        // A fresh install is indexed by the startup path, with no request made.
+        startup_scan(app.clone()).await;
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM tracks")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1, "startup scan indexed the library");
 
         let (title, artist, dur, is_book): (String, String, i32, bool) =
             sqlx::query_as("SELECT title, artist, duration_sec, is_book FROM tracks")

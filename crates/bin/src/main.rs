@@ -51,22 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         books,
         discovery,
     };
-    // Index the library once at startup, in the background. Nothing else scans
-    // a library that was copied in by hand: scans otherwise run only after a
-    // download or through the internal API, so a fresh install showed an empty
-    // app. Files already indexed are skipped by (mtime, size), so on a warm
-    // restart this is one directory walk.
-    let startup = state.clone();
-    tokio::spawn(async move {
-        match mh_server::scan::scan(&startup).await {
-            Ok(r) => tracing::info!(
-                indexed = r.indexed,
-                scanned = r.scanned,
-                "startup scan done"
-            ),
-            Err(e) => tracing::warn!(error = %e, "startup scan failed"),
-        }
-    });
+    tokio::spawn(mh_server::scan::startup_scan(state.clone()));
     let app = build_router(state);
 
     let listener = TcpListener::bind(&addr).await?;
@@ -81,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Discover OIDC with backoff instead of crashing on a transient Keycloak 502.
 ///
 /// Keycloak returns 502 for a beat during its own restart/GC. A single failed
-/// discovery used to exit the process, and the orchestrator would restart it straight into the
+/// discovery used to exit the process, and k3s would restart it straight into the
 /// same 502 - a restart storm that severs live playback for every already
 /// authenticated user, who need only their session cookie, not Keycloak. Ride a
 /// transient outage out in one pod; a sustained one still gives up (login is dead
