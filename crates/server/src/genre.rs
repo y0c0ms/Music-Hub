@@ -307,10 +307,7 @@ pub fn run_enricher(pool: mh_db::Pool, config: Arc<Config>) {
         return;
     }
     tokio::spawn(async move {
-        let http = mh_core::tls::client_builder()
-            .timeout(Duration::from_secs(12))
-            .build()
-            .unwrap_or_default();
+        let http = crate::discovery::https_only_client();
         let mut tick = tokio::time::interval(Duration::from_secs(300));
         loop {
             tick.tick().await;

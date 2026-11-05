@@ -55,16 +55,6 @@ updates:
     open-pull-requests-limit: 3
     labels: [dependencies, android]
 
-  - package-ecosystem: github-actions
-    directory: /
-    schedule: {interval: weekly, day: monday}
-    cooldown:
-      default-days: 7
-    groups:
-      actions:
-        patterns: ["*"]
-    labels: [dependencies, ci]
-
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly, day: monday}
@@ -74,3 +64,25 @@ updates:
     cooldown:
       default-days: 7
     labels: [dependencies, docker]
+
+  # Python tools in the runtime image (docker/requirements.txt) and the CI
+  # coverage tool (.github/ci-requirements.txt), both hash-pinned.
+  - package-ecosystem: pip
+    directory: /docker
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    groups:
+      python-image:
+        patterns: ["*"]
+    labels: [dependencies, python]
+
+  - package-ecosystem: pip
+    directory: /.github
+    schedule: {interval: monthly}
+    cooldown:
+      default-days: 7
+    groups:
+      python-ci:
+        patterns: ["*"]
+    labels: [dependencies, ci]

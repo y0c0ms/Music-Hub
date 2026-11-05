@@ -12,10 +12,14 @@ ARG MH_VERSION=dev
 ARG MH_COMMIT=unknown
 
 # --- 1. PWA -------------------------------------------------------------------
-FROM node:22-alpine AS web
+# Base images are pinned by digest so a rebuild of the same commit uses the same
+# bytes; Dependabot (docker ecosystem) proposes digest updates.
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS web
 WORKDIR /web
-COPY web/package.json web/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY web/package.json web/package-lock.json ./
+# npm ci installs exactly the committed lockfile (integrity hashes included) and
+# fails if it is missing or out of date.
+RUN npm ci
 COPY web/ ./
 # The bundle carries its own version so a browser can be asked what it is running
 # rather than inferred from an asset hash.
@@ -25,7 +29,7 @@ ENV MH_VERSION=${MH_VERSION} MH_COMMIT=${MH_COMMIT}
 RUN npm run build
 
 # --- 2. Rust binary (musl, PWA embedded) --------------------------------------
-FROM rust:1.94-alpine AS build
+FROM rust:1.94-alpine@sha256:77237dd363a0b127bb5ef532c2d64c0deb380b738e43a9c4bdac73398d6d0a08 AS build
 # build-base gives gcc + musl-dev, which ring (via reqwest/sqlx rustls) needs.
 RUN apk add --no-cache build-base
 WORKDIR /src
@@ -51,15 +55,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # 3.21 reached end of life and carried 1 critical + 23 high CVEs (trivy,
 # 2026-11-05); 3.24 with `apk upgrade` scans clean. The release workflow scans
 # the built image and refuses to publish on any fixable HIGH/CRITICAL.
-FROM alpine:3.24
+FROM alpine:3.24@sha256:ce9e1e6d23f04a0b7593445a062a9fc73ed52f8260b9396f77a958295ad18ee7
 # yt-dlp comes from pip, NOT apk: Alpine's package lags and YouTube rejects it.
-# Bump this pin when YouTube breaks it again. mutagen is REQUIRED — yt-dlp's
-# --embed-thumbnail refuses to run on Opus without it, and the tag rewrite shells
-# to python3 + mutagen because ffmpeg's Ogg muxer drops embedded cover art.
-ARG YTDLP_VERSION=2026.10.26
+# mutagen is REQUIRED — yt-dlp's --embed-thumbnail refuses to run on Opus
+# without it, and the tag rewrite shells to python3 + mutagen because ffmpeg's
+# Ogg muxer drops embedded cover art. Both are pinned by version and hash in
+# docker/requirements.txt; bump yt-dlp there when YouTube breaks it again.
+COPY docker/requirements.txt /tmp/requirements.txt
 RUN apk upgrade --no-cache \
     && apk add --no-cache ca-certificates tzdata ffmpeg python3 py3-pip \
-    && pip install --no-cache-dir --break-system-packages "yt-dlp==${YTDLP_VERSION}" mutagen \
+    && pip install --no-cache-dir --break-system-packages --require-hashes -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt \
     && yt-dlp --version \
     && python3 -c "import mutagen; print('mutagen', mutagen.version_string)" \
     && adduser -D -u 1000 -h /home/app app

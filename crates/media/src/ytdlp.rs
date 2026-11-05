@@ -17,8 +17,8 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 /// per client inside the pod: `default` wrote the file; `android` (the pin
 /// since 2026-08-18) and `web`, `web_safari`, `ios`, `mweb` answered "Requested
 /// format is not available"; `tv` "The page needs to be reloaded"; `android_vr`
-/// 403. With yt-dlp 2026.07.04 every client failed, so the version pin in the
-/// Dockerfile moves with this one. It is NOT for search — a `--flat-playlist
+/// 403. With yt-dlp 2026.07.04 every client failed, so the version pin in
+/// `docker/requirements.txt` moves with this one. It is NOT for search — a `--flat-playlist
 /// --dump-json` search never touches a media URL and works unpinned.
 /// Deliberately ONE client, never a fallback list: yt-dlp merges the formats
 /// every listed client offers and may select one whose media URL 403s. When

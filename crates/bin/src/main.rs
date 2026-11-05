@@ -63,14 +63,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Discover OIDC with backoff instead of crashing on a transient Keycloak 502.
+/// Discover OIDC with backoff instead of crashing on a transient provider 502.
 ///
-/// Keycloak returns 502 for a beat during its own restart/GC. A single failed
-/// discovery used to exit the process, and k3s would restart it straight into the
-/// same 502 - a restart storm that severs live playback for every already
-/// authenticated user, who need only their session cookie, not Keycloak. Ride a
-/// transient outage out in one pod; a sustained one still gives up (login is dead
-/// then anyway) and lets the restart policy take over.
+/// An identity provider can return 502 for a moment during its own restart. A
+/// single failed discovery used to exit the process, and the container runtime
+/// would restart it straight into the same 502 - a restart storm that severs
+/// live playback for every already authenticated user, who need only their
+/// session cookie, not the provider. Ride a transient outage out; a sustained
+/// one still gives up (login is dead then anyway) and lets the restart policy
+/// take over.
 async fn discover_auth(
     config: &Config,
 ) -> Result<mh_server::auth::Auth, mh_server::auth::AuthInitError> {

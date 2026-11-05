@@ -171,7 +171,7 @@ pub async fn search_source(q: &str, n: usize) -> Result<Vec<Acquire>> {
     if q.is_empty() {
         return Err(MediaError::Parse("empty query".to_owned()));
     }
-    let n = n.clamp(1, 25);
+    let n = n.clamp(1, MAX_SEARCH_RESULTS);
     // "ytsearchN:query" is one argv element; the trailing "--" stops yt-dlp
     // reading it as an option regardless.
     let query = format!("ytsearch{n}:{q}");
@@ -191,10 +191,18 @@ pub async fn search_source(q: &str, n: usize) -> Result<Vec<Acquire>> {
     Ok(parse_search_entries(&out, n))
 }
 
+/// The most results one source search returns: `search_source` clamps its `n`
+/// to this, and the parser never reserves more than this however `n` arrived.
+const MAX_SEARCH_RESULTS: usize = 25;
+
 fn parse_search_entries(out: &[u8], n: usize) -> Vec<Acquire> {
+    let n = n.min(MAX_SEARCH_RESULTS);
     let text = String::from_utf8_lossy(out);
     let mut results = Vec::with_capacity(n);
     for line in text.lines() {
+        if results.len() >= n {
+            break;
+        }
         let line = line.trim();
         if !line.starts_with('{') {
             continue;
@@ -1850,6 +1858,21 @@ mod tests {
         assert_eq!(results[0].source_id, "validid1234");
         assert_eq!(results[0].artist, "Band"); // "- Topic" cleaned
         assert_eq!(results[0].duration, 200);
+    }
+
+    /// However large the requested count, one search yields at most
+    /// MAX_SEARCH_RESULTS results (the caller's n is user input).
+    #[test]
+    fn a_search_never_returns_more_than_the_cap() {
+        let dump = (0..40)
+            .map(|i| format!("{{\"id\":\"validid{i:04}\",\"title\":\"Song {i}\"}}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            parse_search_entries(dump.as_bytes(), usize::MAX).len(),
+            MAX_SEARCH_RESULTS
+        );
+        assert_eq!(parse_search_entries(dump.as_bytes(), 3).len(), 3);
     }
 
     #[test]

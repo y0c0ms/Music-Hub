@@ -8,9 +8,6 @@ A self-hosted music server with a fast mobile-first web app and an Android app.
 Start a song on your laptop, skip it from your phone, then move the sound to the
 phone with one tap — every device signed in to your account shares one queue.
 
-[![CI](https://github.com/y0c0ms/Music-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/y0c0ms/Music-Hub/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/y0c0ms/Music-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/y0c0ms/Music-Hub/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/y0c0ms/Music-Hub/badge)](https://scorecard.dev/viewer/?uri=github.com/y0c0ms/Music-Hub)
 [![Latest release](https://img.shields.io/github/v/release/y0c0ms/Music-Hub?sort=semver)](https://github.com/y0c0ms/Music-Hub/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -50,7 +47,7 @@ phone with one tap — every device signed in to your account shares one queue.
 ### Built to be trusted
 - **Single sign-on** through any OpenID Connect provider (Keycloak, Authentik, Authelia, Zitadel…). Tokens never reach the browser; sessions are stored hashed.
 - **One small Rust binary** with the web app embedded, PostgreSQL for everything else.
-- **Every release is gated:** tests on a real database, a coverage floor, `clippy -D warnings`, `cargo audit`, `npm audit`, secret scanning, semgrep, and a container CVE scan with **zero fixable high/critical findings** — repeated on the exact published image, which ships with a signed build-provenance attestation.
+- **Every release is gated:** tests on a real database, a coverage floor, `clippy -D warnings`, `cargo audit`, `npm audit`, secret scanning, semgrep, and a container CVE scan with **zero fixable high/critical findings** on the exact image that is published. The gates run on the maintainer's own CI (Forgejo Actions, workflows in [`.forgejo/workflows`](.forgejo/workflows)); a release is pushed here only after they pass.
 
 ## 🚀 Try it in two minutes
 
@@ -92,10 +89,10 @@ startup; songs appear as soon as it finishes. On Android, install the APK from t
 [latest release](https://github.com/y0c0ms/Music-Hub/releases/latest) and
 enter the same address on first launch.
 
-Verify the image you pulled was built by this repository's release workflow:
+Check the APK you downloaded against the release's `SHA256SUMS`:
 
 ```bash
-gh attestation verify oci://ghcr.io/y0c0ms/music-hub:latest --owner y0c0ms
+sha256sum -c SHA256SUMS
 ```
 
 ## Requirements

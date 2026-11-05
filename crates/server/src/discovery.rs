@@ -53,14 +53,24 @@ pub struct Discovery {
     http: reqwest::Client,
 }
 
+/// The client for the third-party music APIs (ListenBrainz, MusicBrainz,
+/// Last.fm, YouTube images), all HTTPS. HTTPS-only means a redirect to plain
+/// http fails instead of sending the Last.fm API key in clear.
+pub(crate) fn https_only_client() -> reqwest::Client {
+    mh_core::tls::client_builder()
+        .https_only(true)
+        .timeout(Duration::from_secs(12))
+        .build()
+        .unwrap_or_default()
+}
+
 impl Discovery {
     #[must_use]
     pub fn new(config: Arc<Config>) -> Self {
-        let http = mh_core::tls::client_builder()
-            .timeout(Duration::from_secs(12))
-            .build()
-            .unwrap_or_default();
-        Self { config, http }
+        Self {
+            config,
+            http: https_only_client(),
+        }
     }
 
     fn abs_prefix(&self) -> String {
@@ -135,16 +145,10 @@ pub async fn playlist_cover(
     State(app): State<AppState>,
     AxumPath(playlist): AxumPath<String>,
 ) -> Response {
-    let valid = playlist.starts_with("OLAK5uy_")
-        && playlist.len() <= 50
-        && playlist
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-    if !valid {
-        return StatusCode::NOT_FOUND.into_response();
-    }
     let dir = Path::new(&app.config.state_dir).join("release-covers");
-    let file = dir.join(format!("{playlist}.jpg"));
+    let Some((file, tmp)) = cover_cache_paths(&dir, &playlist) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     if let Ok(bytes) = tokio::fs::read(&file).await {
         return cover_response(bytes);
     }
@@ -160,13 +164,38 @@ pub async fn playlist_cover(
     let Ok(bytes) = resp.bytes().await else {
         return StatusCode::BAD_GATEWAY.into_response();
     };
-    if tokio::fs::create_dir_all(&dir).await.is_ok() {
-        let tmp = dir.join(format!("{playlist}.jpg.tmp"));
-        if tokio::fs::write(&tmp, &bytes).await.is_ok() {
-            let _ = tokio::fs::rename(&tmp, &file).await;
-        }
-    }
+    store_cover(&dir, &tmp, &file, &bytes).await;
     cover_response(bytes.to_vec())
+}
+
+/// Write a fetched cover into the cache: to `tmp` first, then renamed, so a
+/// reader never sees half a file. Best effort - a failed write only means the
+/// next request fetches again.
+async fn store_cover(dir: &Path, tmp: &Path, file: &Path, bytes: &[u8]) {
+    if tokio::fs::create_dir_all(dir).await.is_ok() && tokio::fs::write(tmp, bytes).await.is_ok() {
+        let _ = tokio::fs::rename(tmp, file).await;
+    }
+}
+
+/// The cache file and its temp file for a release playlist id, or `None` for
+/// anything that is not a plain YouTube Music album-playlist id.
+///
+/// The id comes from the URL. Only `OLAK5uy_` + ASCII letters, digits, `_` and
+/// `-` (at most 50 bytes) is accepted, so it cannot hold a separator, `..` or a
+/// NUL, and the joined path is checked to stay a direct child of `dir`.
+fn cover_cache_paths(dir: &Path, playlist: &str) -> Option<(PathBuf, PathBuf)> {
+    let valid = playlist.starts_with("OLAK5uy_")
+        && playlist.len() <= 50
+        && playlist
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !valid {
+        return None;
+    }
+    let file = dir.join(format!("{playlist}.jpg"));
+    let tmp = dir.join(format!("{playlist}.jpg.tmp"));
+    let inside = |p: &Path| p.parent() == Some(dir);
+    (inside(&file) && inside(&tmp)).then_some((file, tmp))
 }
 
 fn cover_response(bytes: Vec<u8>) -> Response {
@@ -863,12 +892,12 @@ async fn listenbrainz_suggestions(
     if lb_user.is_empty() {
         return Err("LISTENBRAINZ_USER is not set".to_owned());
     }
+    let Some(user) = user_segment(lb_user) else {
+        return Err("not a ListenBrainz username".to_owned());
+    };
     let listing = lb_get(
         http,
-        &format!(
-            "{LB_BASE}/1/user/{}/playlists/createdfor?count=10",
-            enc(lb_user)
-        ),
+        &format!("/1/user/{user}/playlists/createdfor?count=10"),
     )
     .await
     .map_err(|e| format!("listenbrainz playlists: {e}"))?;
@@ -898,7 +927,7 @@ async fn listenbrainz_suggestions(
     let mut seen: HashSet<String> = HashSet::new();
     let mut pool = Vec::new();
     for (mbid, week) in mbids {
-        let Ok(body) = lb_get(http, &format!("{LB_BASE}/1/playlist/{mbid}")).await else {
+        let Ok(body) = lb_get(http, &format!("/1/playlist/{mbid}")).await else {
             continue;
         };
         let Some(tracks) = body["playlist"]["track"].as_array() else {
@@ -966,10 +995,10 @@ async fn fresh_releases(
     lb_user: &str,
     days: u32,
 ) -> Result<Vec<Release>, String> {
-    let url = format!(
-        "{LB_BASE}/1/user/{}/fresh_releases?days={days}&future=false",
-        enc(lb_user)
-    );
+    let Some(user) = user_segment(lb_user) else {
+        return Err("not a ListenBrainz username".to_owned());
+    };
+    let url = format!("/1/user/{user}/fresh_releases?days={days}&future=false");
     let body = lb_get(http, &url)
         .await
         .map_err(|e| format!("listenbrainz fresh releases: {e}"))?;
@@ -1473,8 +1502,16 @@ fn release_key(mbid: &str, artist: &str, title: &str) -> String {
     }
 }
 
-async fn lb_get(http: &reqwest::Client, url: &str) -> Result<Value, String> {
-    http.get(url)
+/// The full URL for a ListenBrainz API path. Only the path and query come from
+/// the caller, so the result is always on `LB_BASE`, whatever a username holds;
+/// callers percent-encode user input with [`enc`] / [`user_segment`].
+fn lb_url(path_and_query: &str) -> String {
+    debug_assert!(path_and_query.starts_with('/'));
+    format!("{LB_BASE}{path_and_query}")
+}
+
+async fn lb_get(http: &reqwest::Client, path_and_query: &str) -> Result<Value, String> {
+    http.get(lb_url(path_and_query))
         .header(header::USER_AGENT, USER_AGENT)
         .send()
         .await
@@ -1727,7 +1764,9 @@ fn interleave(owned: &[DiscoveryCard], cands: &[DiscoveryCard], n: usize) -> Vec
     if take_o + take_c < n {
         take_o = owned.len().min(n - take_c);
     }
-    let mut out = Vec::with_capacity(take_o + take_c);
+    // take_o + take_c <= n, and n is clamped to MAX_DECK by the handler; the
+    // explicit cap keeps the reservation bounded even if a caller is not.
+    let mut out = Vec::with_capacity((take_o + take_c).min(MAX_DECK));
     for i in 0..take_o.max(take_c) {
         if i < take_o {
             out.push(owned[i].clone());
@@ -1885,6 +1924,17 @@ fn is_mbid(s: &str) -> bool {
             8 | 13 | 18 | 23 => c == b'-',
             _ => c.is_ascii_hexdigit(),
         })
+}
+
+/// A username encoded as exactly one URL path segment, or `None` for a name
+/// that would be a dot-segment (`.`, `..`): those survive [`enc`] unchanged and
+/// a URL parser resolves them, moving the request to a different endpoint.
+fn user_segment(name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() || name.bytes().all(|b| b == b'.') {
+        return None;
+    }
+    Some(enc(name))
 }
 
 fn enc(s: &str) -> String {
@@ -2056,6 +2106,161 @@ mod tests {
     fn a_same_title_album_by_another_artist_is_not_the_release() {
         let found = vec![album("Vendetta", "Someone Else", &["x"])];
         assert!(pick_release_album(found, "Plutonio 2765", "Vendetta").is_none());
+    }
+
+    /// The playlist id is a URL segment; it must never name a file outside the
+    /// cover cache.
+    #[test]
+    fn a_cover_path_never_leaves_the_cache_directory() {
+        let dir = Path::new("/state/release-covers");
+        let (file, tmp) = cover_cache_paths(dir, "OLAK5uy_abc-DEF_123").unwrap();
+        assert_eq!(file, dir.join("OLAK5uy_abc-DEF_123.jpg"));
+        assert_eq!(tmp, dir.join("OLAK5uy_abc-DEF_123.jpg.tmp"));
+        for bad in [
+            "OLAK5uy_/../../etc/passwd",
+            "OLAK5uy_..",
+            "OLAK5uy_a/b",
+            "OLAK5uy_a\\b",
+            "OLAK5uy_a\0b",
+            "OLAK5uy_ä",
+            "../OLAK5uy_x",
+            "PLsomething",
+            &format!("OLAK5uy_{}", "a".repeat(60)),
+        ] {
+            assert!(cover_cache_paths(dir, bad).is_none(), "accepted {bad:?}");
+        }
+    }
+
+    /// A ListenBrainz username is user-editable and goes into a URL path. Once
+    /// encoded it must stay one segment of the ListenBrainz API: no character
+    /// that ends a segment or the path survives.
+    #[test]
+    fn a_username_stays_one_url_path_segment() {
+        for name in [
+            "../../admin",
+            "a/b",
+            "x?token=1",
+            "x#frag",
+            "evil@host",
+            "a b",
+            "ü",
+        ] {
+            let e = enc(name);
+            assert!(
+                e.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.~%".contains(&b)),
+                "{name:?} encoded to {e:?}"
+            );
+        }
+        assert_eq!(enc("../x"), "..%2Fx");
+        // A bare dot-segment survives percent-encoding, so it is refused.
+        for dots in [".", "..", " .. "] {
+            assert_eq!(user_segment(dots), None, "accepted {dots:?}");
+        }
+        assert_eq!(user_segment("rob.zombie").as_deref(), Some("rob.zombie"));
+    }
+
+    /// The discovery client carries the Last.fm API key in its query strings,
+    /// so it must refuse plain http (and with it an https->http redirect)
+    /// instead of sending the key in clear. Refused before any connection.
+    #[tokio::test]
+    async fn the_discovery_client_refuses_plain_http() {
+        let cfg = mh_core::Config::load(|k| match k {
+            "OIDC_ISSUER" => Some("https://idp.invalid".to_owned()),
+            "OIDC_CLIENT_SECRET" | "DATABASE_URL" => Some("x".to_owned()),
+            _ => None,
+        })
+        .unwrap();
+        // Both users of the shared client: discovery and the genre enricher.
+        let d = Discovery::new(Arc::new(cfg));
+        for http in [&d.http, &https_only_client()] {
+            let err = http
+                .get("http://127.0.0.1:9/?api_key=k")
+                .send()
+                .await
+                .unwrap_err();
+            assert!(
+                err.is_builder() || err.to_string().contains("https"),
+                "{err}"
+            );
+        }
+    }
+
+    /// Whatever a username holds, the request URL stays on api.listenbrainz.org
+    /// and the name stays inside its path segment.
+    #[test]
+    fn a_listenbrainz_url_never_leaves_its_host() {
+        for name in [
+            "evil.example",
+            "@evil.example",
+            "x/../../../",
+            "x?u=http://evil",
+            "x#y",
+        ] {
+            let seg = user_segment(name).unwrap();
+            let url = reqwest::Url::parse(&lb_url(&format!("/1/user/{seg}/fresh_releases?days=1")))
+                .unwrap();
+            assert_eq!(
+                url.host_str(),
+                Some("api.listenbrainz.org"),
+                "{name:?} -> {url}"
+            );
+            assert_eq!(url.scheme(), "https");
+            let segs: Vec<_> = url.path_segments().unwrap().collect();
+            assert_eq!(segs.len(), 4, "{name:?} split the path: {url}");
+            assert_eq!(segs[3], "fresh_releases", "{name:?} -> {url}");
+        }
+    }
+
+    /// A dot-only username is refused before any request is built: the client
+    /// here points nowhere, so reaching the network would fail differently.
+    #[tokio::test]
+    async fn a_dot_segment_username_is_refused_before_any_request() {
+        let http = reqwest::Client::new();
+        for user in [".", ".."] {
+            let err = listenbrainz_suggestions(&http, user).await.err();
+            assert_eq!(err.as_deref(), Some("not a ListenBrainz username"));
+            let err = fresh_releases(&http, user, 30).await.err();
+            assert_eq!(err.as_deref(), Some("not a ListenBrainz username"));
+        }
+    }
+
+    /// A stored cover lands under its final name with no temp file left, and
+    /// the directory is created when missing.
+    #[tokio::test]
+    async fn a_stored_cover_is_complete_and_leaves_no_temp_file() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("release-covers");
+        let (file, tmp) = cover_cache_paths(&dir, "OLAK5uy_abc").unwrap();
+        store_cover(&dir, &tmp, &file, b"jpeg-bytes").await;
+        assert_eq!(std::fs::read(&file).unwrap(), b"jpeg-bytes");
+        assert!(!tmp.exists());
+    }
+
+    /// A hostile playlist id answers 404 and leaves nothing on disk.
+    #[tokio::test]
+    async fn the_cover_route_refuses_an_id_that_could_escape_the_cache() {
+        let state = tempfile::tempdir().unwrap();
+        let cfg = mh_core::Config::load(|k| match k {
+            "OIDC_ISSUER" => Some("https://idp.invalid".to_owned()),
+            "OIDC_CLIENT_SECRET" => Some("s".to_owned()),
+            "DATABASE_URL" => Some("postgres://nobody@127.0.0.1:1/none".to_owned()),
+            "STATE_DIR" => Some(state.path().to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .unwrap();
+        let app = crate::AppState::for_test(cfg, pool);
+        for bad in ["OLAK5uy_..%2F..%2Fetc", "../OLAK5uy_x", "OLAK5uy_a.b"] {
+            let res = playlist_cover(State(app.clone()), AxumPath(bad.to_owned())).await;
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{bad:?}");
+        }
+        assert!(
+            std::fs::read_dir(state.path()).unwrap().next().is_none(),
+            "a refused id created files"
+        );
     }
 
     /// The owned "Multiplica" is credited "Plutonio"; the release credits
