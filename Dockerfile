@@ -12,7 +12,7 @@ ARG MH_VERSION=dev
 ARG MH_COMMIT=unknown
 
 # --- 1. PWA -------------------------------------------------------------------
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
@@ -25,7 +25,7 @@ ENV MH_VERSION=${MH_VERSION} MH_COMMIT=${MH_COMMIT}
 RUN npm run build
 
 # --- 2. Rust binary (musl, PWA embedded) --------------------------------------
-FROM rust:1.94-alpine AS build
+FROM rust:1.98-alpine AS build
 # build-base gives gcc + musl-dev, which ring (via reqwest/sqlx rustls) needs.
 RUN apk add --no-cache build-base
 WORKDIR /src
