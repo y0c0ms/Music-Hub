@@ -163,16 +163,17 @@ jobs:
         with:
           node-version: "22"
 
-      # Shipped code only: the web bundle's runtime deps and the Android
-      # shell's. Build tooling (vite, svelte compiler, the Capacitor CLI) runs
-      # on the build machine and never reaches a user, so it is not gated.
-      - name: npm audit (web, runtime)
+      # Every npm dependency, build tooling included: a compromised build tool
+      # can alter what ships. Moderate and above fail. The one known low
+      # (deepmerge, prototype poisoning, no fixed release, build-time only via
+      # vite-plugin-svelte and workbox) stays visible as a Dependabot alert.
+      - name: npm audit (web)
         working-directory: web
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=moderate
 
-      - name: npm audit (android shell, runtime)
+      - name: npm audit (android shell)
         working-directory: android-shell
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=moderate
 
   secrets:
     name: secret scan

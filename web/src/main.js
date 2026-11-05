@@ -1,4 +1,5 @@
 import './app.css';
+import { mount } from 'svelte';
 import App from './App.svelte';
 import { selfUpdateIfStale } from './lib/appUpdate.js';
 import { serverVersion } from './lib/api.js';
@@ -43,7 +44,7 @@ if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
 // compared those two numbers at runtime.
 selfUpdateIfStale(__MH_COMMIT__, serverVersion);
 
-const app = new App({
+const app = mount(App, {
   target: document.getElementById('app'),
 });
 
