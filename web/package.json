@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
-    "@capacitor/core": "^6.2.1",
+    "@capacitor/core": "^8.6.0",
     "@jofr/capacitor-media-session": "^4.0.0"
   },
   "overrides": {
