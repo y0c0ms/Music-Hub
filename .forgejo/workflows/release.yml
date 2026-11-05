@@ -10,8 +10,8 @@
 #                 release with the APK and its checksum.
 #
 # Secrets (Forgejo repository settings > Actions > Secrets):
-#   GH_RELEASE_TOKEN   fine-grained GitHub token for y0c0ms/Music-Hub:
-#                      contents read/write (releases) + packages write (ghcr)
+#   GH_RELEASE_TOKEN   classic GitHub token with repo + write:packages scopes
+#                      (fine-grained tokens cannot push to ghcr.io yet)
 #   ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
 #   ANDROID_KEY_PASSWORD   optional; without them the APK is unsigned and its
 #                      name says so.
@@ -24,6 +24,9 @@ on:
 jobs:
   gates:
     uses: ./.forgejo/workflows/ci.yml
+    # The gates clone the private repo with the job token, which a called
+    # workflow only receives when the caller passes its secrets down.
+    secrets: inherit
 
   publish:
     needs: gates
