@@ -5,7 +5,7 @@
   "description": "Android shell around the approved music-hub PWA",
   "dependencies": {
     "@capacitor/android": "^6.2.3",
-    "@capacitor/app": "^6.0.3",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^6.2.3",
     "@jofr/capacitor-media-session": "^4.0.0"
   },
