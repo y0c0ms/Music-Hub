@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/y0c0ms/Music-Hub/discussions
+    about: Ask setup questions and share ideas in Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/y0c0ms/Music-Hub/security/advisories/new
+    about: Privately, so it can be fixed before it is public.

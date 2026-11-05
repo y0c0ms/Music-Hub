@@ -1,31 +1,102 @@
-# Music Hub
+<div align="center">
 
-A self-hosted music server with a mobile-first web app (PWA) and an Android
-app. It owns its library in PostgreSQL, streams from your own files, signs users
-in through any OpenID Connect provider, and fetches new music with yt-dlp.
+# 🎧 Music Hub
 
-## Features
+**Your music, on every device, from your own server.**
 
-- **Library** — scans a music folder (tags, duration and artwork via ffprobe),
-  with albums, artists, genres, starred tracks, playlists, play counts and
-  accent-insensitive full-text search.
-- **Per-user libraries** — files under `users/<name>/downloads/` belong to that
-  user; everything else is shared.
-- **Session playback** — every device signed into the same account shares one
-  queue; pick which device plays and use the others as remotes
-  ([design](docs/design/session-playback.md)).
-- **Offline** — save songs, albums and playlists to the device
-  ([design](docs/design/offline.md)).
-- **Acquire** — search YouTube and download tracks or whole albums with yt-dlp,
-  tagged and with cover art.
-- **Discovery** — a swipe deck built from ListenBrainz and Last.fm suggestions
-  with 30-second previews; likes are downloaded, dislikes deleted.
-- **Audiobooks** — a books shelf with chapters and per-user progress, plus a
-  book downloader.
-- **Scrobbling** to ListenBrainz, per user or through a server-wide account.
-- **Alerts** to [ntfy](https://ntfy.sh) when the downloader breaks.
-- **Android app** — a thin Capacitor wrapper with background playback,
-  lockscreen controls and in-app updates ([android-shell/](android-shell/)).
+A self-hosted music server with a fast mobile-first web app and an Android app.
+Start a song on your laptop, skip it from your phone, then move the sound to the
+phone with one tap — every device signed in to your account shares one queue.
+
+[![CI](https://github.com/y0c0ms/Music-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/y0c0ms/Music-Hub/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/y0c0ms/Music-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/y0c0ms/Music-Hub/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/y0c0ms/Music-Hub/badge)](https://scorecard.dev/viewer/?uri=github.com/y0c0ms/Music-Hub)
+[![Latest release](https://img.shields.io/github/v/release/y0c0ms/Music-Hub?sort=semver)](https://github.com/y0c0ms/Music-Hub/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[**Quick start**](#-try-it-in-two-minutes) · [**Android app**](https://github.com/y0c0ms/Music-Hub/releases/latest) · [**Features**](#-features) · [**Security**](SECURITY.md)
+
+![A laptop and a phone on the same account: the laptop plays an album, the phone controls it, then the music moves to the phone](docs/media/demo.gif)
+
+<sub>Real recording of the released image, with an invented demo library. [MP4 version](docs/media/demo.mp4).</sub>
+
+</div>
+
+## ✨ Features
+
+### Play anywhere, control from anywhere
+- **One queue across all your devices.** Phone, laptop, tablet, the Android app — they all see the same queue, position and current song, live.
+- **Pick where the sound comes from.** Any device can be the speaker; the others become remotes. Moving playback keeps the song and the position.
+- **Offline.** Save songs, albums and playlists to a device and play them with no connection.
+- **Installable.** Add the web app to your home screen, or use the Android app with background playback and lock-screen controls.
+
+### Your library, organised
+- **Albums, artists, genres, playlists, favourites** and play counts, built from your own files' tags and artwork.
+- **Search that forgives** accents, typos and partial words.
+- **Shared and personal libraries** — each user has a private downloads folder next to the shared collection.
+- **Audiobooks** with chapters and per-user progress, on their own shelf, never mixed into music.
+
+### Grow it
+- **Download** tracks or whole albums from YouTube with yt-dlp — tagged, with cover art, deduplicated against what you already own.
+- **New releases** from the artists you listen to, and a swipe deck of suggestions with 30-second previews (ListenBrainz / Last.fm).
+- **Scrobbling** to ListenBrainz.
+
+<div align="center">
+
+![Home, albums, now playing and search on a phone](docs/media/screens.png)
+
+</div>
+
+### Built to be trusted
+- **Single sign-on** through any OpenID Connect provider (Keycloak, Authentik, Authelia, Zitadel…). Tokens never reach the browser; sessions are stored hashed.
+- **One small Rust binary** with the web app embedded, PostgreSQL for everything else.
+- **Every release is gated:** tests on a real database, a coverage floor, `clippy -D warnings`, `cargo audit`, `npm audit`, secret scanning, semgrep, and a container CVE scan with **zero fixable high/critical findings** — repeated on the exact published image, which ships with a signed build-provenance attestation.
+
+## 🚀 Try it in two minutes
+
+You need Docker and an OpenID Connect provider. Save this as `compose.yaml`,
+fill in the three `OIDC_`/`PUBLIC_URL` values, and run `docker compose up -d`:
+
+```yaml
+services:
+  db:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: musichub
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: musichub
+    volumes: [db:/var/lib/postgresql]   # Postgres 18 keeps its data under this directory
+    restart: unless-stopped
+
+  music-hub:
+    image: ghcr.io/y0c0ms/music-hub:latest
+    depends_on: [db]
+    ports: ["8080:8080"]
+    environment:
+      PUBLIC_URL: https://music.example.com          # where you will open it
+      OIDC_ISSUER: https://auth.example.com/realms/example
+      OIDC_CLIENT_ID: music-hub
+      OIDC_CLIENT_SECRET: change-me
+      DATABASE_URL: postgres://musichub:change-me@db:5432/musichub
+    volumes:
+      - /path/to/your/music:/music
+      - state:/state
+    restart: unless-stopped
+
+volumes: {db: {}, state: {}}
+```
+
+Register `<PUBLIC_URL>/auth/callback` as the redirect URI of the OIDC client,
+open `PUBLIC_URL` and sign in. The library is indexed in the background at
+startup; songs appear as soon as it finishes. On Android, install the APK from the
+[latest release](https://github.com/y0c0ms/Music-Hub/releases/latest) and
+enter the same address on first launch.
+
+Verify the image you pulled was built by this repository's release workflow:
+
+```bash
+gh attestation verify oci://ghcr.io/y0c0ms/music-hub:latest --owner y0c0ms
+```
 
 ## Requirements
 
@@ -39,7 +110,7 @@ in through any OpenID Connect provider, and fetches new music with yt-dlp.
 
 The container image already contains ffmpeg, yt-dlp and mutagen.
 
-## Quick start (Docker)
+## Running with `docker run`
 
 ```bash
 docker run -d --name music-hub -p 8080:8080 \
@@ -138,6 +209,15 @@ Download the APK from
 it asks for your server's `https://` URL. See
 [android-shell/README.md](android-shell/README.md) for building it yourself and
 for servers behind a private CA.
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+and the [Code of Conduct](CODE_OF_CONDUCT.md). Questions and ideas go to
+[Discussions](https://github.com/y0c0ms/Music-Hub/discussions). Found a
+security problem? Please report it [privately](SECURITY.md).
+
+If Music Hub is useful to you, a ⭐ helps other people find it.
 
 ## License
 

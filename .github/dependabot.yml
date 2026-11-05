@@ -1,0 +1,76 @@
+# Weekly dependency updates, grouped so a week produces a handful of PRs rather
+# than dozens. A version must have been public for 7 days before it is proposed:
+# hijacked releases are usually caught and yanked within that window. Security
+# updates are separate and not delayed (repository setting).
+# Every update PR runs the full CI gate before it can merge.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      rust-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, rust]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+    # Svelte 5 and the Vite versions that require it are a code migration, not
+    # a bump: with svelte 5.57 + vite 8.3 the build succeeds but the app renders
+    # blank (runtime error effect_orphan). Security updates are not affected.
+    ignore:
+      - dependency-name: svelte
+        update-types: [version-update:semver-major]
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types: [version-update:semver-major]
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+      - dependency-name: vite-plugin-pwa
+        update-types: [version-update:semver-major]
+    labels: [dependencies, javascript]
+
+  - package-ecosystem: npm
+    directory: /android-shell
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      android-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, android]
+
+  - package-ecosystem: gradle
+    directory: /android-shell/android
+    schedule: {interval: monthly}
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    labels: [dependencies, android]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies, ci]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly, day: monday}
+    cooldown:
+      default-days: 7
+    labels: [dependencies, docker]
