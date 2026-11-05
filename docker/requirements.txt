@@ -1,0 +1,11 @@
+# Python tools in the runtime image, pinned by version AND hash: pip refuses a
+# package whose hash differs. Regenerate with:
+#   pip-compile --generate-hashes --allow-unsafe -o docker/requirements.txt docker/requirements.in
+# yt-dlp breaks when YouTube changes; bump it here and re-run the per-client
+# probe noted in crates/media/src/ytdlp.rs.
+mutagen==1.48.1 \
+    --hash=sha256:4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7 \
+    --hash=sha256:8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173
+yt-dlp==2026.10.26 \
+    --hash=sha256:a05c5b5d8562f7e8a62f5334348b406af4930d56d3a65f8021d14af0e22339ae \
+    --hash=sha256:abe5c6b94c3b2f0560500add1c42e0a97641752743a5b65588ac2007a6e23eb6

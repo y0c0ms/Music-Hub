@@ -53,9 +53,10 @@ corresponding source file.
   excludes `.env` and `.env.*`.
 - Expose only the HTTP port through your reverse proxy. Do not expose Postgres.
 - Keep `yt-dlp` current. Downloads depend on it, and the pinned version in
-  `Dockerfile` (`YTDLP_VERSION`) should be bumped when extractors break.
+  `docker/requirements.txt` (hash-pinned) should be bumped when extractors break.
 
 ## Automated checks
 
-`.github/workflows/ci.yml` runs Semgrep and a Trivy scan of the built image.
-These findings block the build.
+`.forgejo/workflows/ci.yml` runs gitleaks, Semgrep, `cargo audit`, `npm audit`
+and a Trivy config scan; `.forgejo/workflows/release.yml` also scans the built
+image with Trivy. Any finding blocks the build and the release.

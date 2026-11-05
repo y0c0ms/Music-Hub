@@ -1,0 +1,146 @@
+---
+# Quality and security gates, run by Forgejo on every push and pull request.
+#
+# The public GitHub repository has no CI of its own: these are the gates, and
+# release.yml publishes to GitHub only when they pass on the tagged commit.
+#
+# Runs on a self-hosted runner (label `musichub`) inside a pinned job image
+# (ci-rust) that carries the Rust toolchain, cargo-audit, cargo-llvm-cov,
+# trivy, gitleaks, semgrep, node, psql, ffmpeg and a JDK. Postgres 18 with
+# pgvector runs as a service, so the database tests run instead of skipping.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+  pull_request:
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  gate:
+    runs-on: musichub
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: docker.io/pgvector/pgvector:pg18@sha256:c29f30688a9ad961691bdf0ec1650717cc132a5814619d80f80463d6e4c42e47
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: musichub
+    env:
+      DATABASE_URL: postgres://postgres:ci-only-password@postgres:5432/musichub
+    steps:
+      # The repository is private: clone with the job's own short-lived token,
+      # passed as a header so it never lands in .git/config or the log.
+      - name: checkout
+        env:
+          JOB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 -w0)
+          git -c http.extraHeader="Authorization: Basic $auth" clone --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" src
+          cd src
+          git checkout --quiet "$GITHUB_SHA"
+          # diff-cover compares changed lines against the public line's main,
+          # mirrored here as public/main (this repository's own main is a
+          # separate private line).
+          git -c http.extraHeader="Authorization: Basic $auth" fetch --quiet origin public/main:refs/remotes/origin/public-main
+
+      - name: secret scan (full history)
+        working-directory: src
+        run: gitleaks git . --no-banner --redact --exit-code 1
+
+      - name: wait for postgres and apply migrations
+        working-directory: src
+        run: |
+          for _ in $(seq 1 60); do pg_isready -h postgres -U postgres -q && break; sleep 1; done
+          for f in migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      # rust-embed compiles web/dist into the binary, so it must exist first.
+      - name: build web bundle
+        working-directory: src/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: rustfmt
+        working-directory: src
+        run: cargo fmt --all --check
+
+      - name: clippy (pedantic and nursery, warnings denied)
+        working-directory: src
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # One instrumented run is both the test gate and the coverage source.
+      # Single-threaded: the database tests share one schema.
+      - name: tests with coverage
+        working-directory: src
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov --workspace --lcov --output-path coverage/rust.lcov -- --test-threads=1
+
+      - name: js tests with coverage
+        working-directory: src/web
+        run: >
+          npx --yes c8 --reporter=lcovonly --report-dir=../coverage/js
+          sh -c 'node mock/saved.test.mjs && node mock/album-state.test.mjs && node mock/bookmark.test.mjs'
+
+      # Total Rust line coverage must not drop below .github/coverage-floor.
+      - name: total coverage floor
+        working-directory: src
+        run: |
+          floor=$(cat .github/coverage-floor)
+          total=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{printf "%.2f", lh*100/lf}' coverage/rust.lcov)
+          echo "rust line coverage ${total}% (floor ${floor}%)"
+          awk -v t="$total" -v f="$floor" 'BEGIN{exit !(t+0 >= f+0)}'
+
+      # Lines changed relative to main must be at least 95% covered.
+      # crates/bin/src/main.rs only wires mh-server together; no test runs it.
+      - name: new-code coverage gate
+        if: github.ref != 'refs/heads/public/main'
+        working-directory: src
+        run: |
+          python3 -m venv /tmp/dc
+          /tmp/dc/bin/pip install --quiet --require-hashes -r .github/ci-requirements.txt
+          /tmp/dc/bin/diff-cover coverage/rust.lcov coverage/js/lcov.info \
+            --compare-branch=origin/public-main --fail-under=95 \
+            --exclude crates/bin/src/main.rs
+
+      # Every advisory fails, unmaintained/unsound warnings included. Deliberate
+      # exceptions live in .cargo/audit.toml with their reason.
+      - name: cargo audit
+        working-directory: src
+        run: cargo audit --deny warnings
+
+      # All npm dependencies, build tooling included; moderate and above fail.
+      - name: npm audit
+        working-directory: src
+        run: |
+          (cd web && npm audit --audit-level=moderate)
+          (cd android-shell && npm ci --no-audit --no-fund --ignore-scripts && npm audit --audit-level=moderate)
+
+      - name: semgrep (static analysis)
+        working-directory: src
+        run: semgrep --config auto --error --quiet --exclude target --exclude node_modules
+
+      # The Android build runs this jar; it must be Gradle's published wrapper.
+      - name: gradle wrapper is genuine
+        working-directory: src
+        run: |
+          jar=android-shell/android/gradle/wrapper/gradle-wrapper.jar
+          sum=$(sha256sum "$jar" | cut -c1-64)
+          curl -fsSL -o /tmp/gradle-versions.json https://services.gradle.org/versions/all
+          python3 - "$sum" /tmp/gradle-versions.json <<'PY' \
+            || { echo "gradle-wrapper.jar ($sum) is not a published Gradle wrapper"; exit 1; }
+          import json, sys
+          known = {v.get("wrapperChecksum") for v in json.load(open(sys.argv[2]))}
+          sys.exit(0 if sys.argv[1] in known else 1)
+          PY
+
+      - name: trivy config (Dockerfile)
+        working-directory: src
+        run: trivy config --exit-code 1 --severity HIGH,CRITICAL --skip-dirs target --skip-dirs web/node_modules --skip-dirs android-shell/node_modules .

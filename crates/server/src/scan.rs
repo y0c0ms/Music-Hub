@@ -84,13 +84,13 @@ fn derive_library(music_root: &str, abs_path: &str) -> (LibraryInfo, String) {
                         name: name.to_owned(),
                         kind: "user",
                         // LOWERCASED, and this is load-bearing. The owner comes
-                        // from a DIRECTORY NAME (`/music/users/Sinem/downloads`)
-                        // while the session username comes from Keycloak
-                        // (`sinem`), and visibility is `l.owner = $username` - a
-                        // case-sensitive comparison. Mismatched, a user sees only
-                        // the shared library: measured after the cutover, Sinem
-                        // could see 36 tracks of her 280. The display name keeps
-                        // the original case; only the identity is normalised.
+                        // from a DIRECTORY NAME (`/music/users/Alice/downloads`)
+                        // while the session username comes from the identity
+                        // provider (`alice`), and visibility is
+                        // `l.owner = $username` - a case-sensitive comparison.
+                        // Mismatched, a user sees only the shared library. The
+                        // display name keeps the original case; only the
+                        // identity is normalised.
                         owner: name.to_lowercase(),
                     },
                     rel,

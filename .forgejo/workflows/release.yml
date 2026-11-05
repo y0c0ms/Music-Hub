@@ -1,0 +1,134 @@
+---
+# Release: runs on Forgejo when a version tag (vX.Y.Z) is pushed, and publishes
+# to the public GitHub repository y0c0ms/Music-Hub. GitHub Actions is not used.
+#
+#   1. gates    - the whole of ci.yml on the tagged commit. Nothing below runs
+#                 unless every gate passes.
+#   2. publish  - builds the image with podman, scans it with trivy (zero
+#                 fixable HIGH/CRITICAL), pushes it to ghcr.io, builds the
+#                 Android APK with the tag's version, and creates the GitHub
+#                 release with the APK and its checksum.
+#
+# Secrets (Forgejo repository settings > Actions > Secrets):
+#   GH_RELEASE_TOKEN   fine-grained GitHub token for y0c0ms/Music-Hub:
+#                      contents read/write (releases) + packages write (ghcr)
+#   ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD   optional; without them the APK is unsigned and its
+#                      name says so.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  gates:
+    uses: ./.forgejo/workflows/ci.yml
+
+  publish:
+    needs: gates
+    # Host executor on the build machine: podman for the image, a JDK and the
+    # Android SDK for the APK. Only reachable from a v* tag.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: musichub-release
+    timeout-minutes: 120
+    env:
+      IMAGE: ghcr.io/y0c0ms/music-hub
+      GH_REPO: y0c0ms/Music-Hub
+
+    steps:
+      - name: checkout
+        env:
+          JOB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 -w0)
+          git -c http.extraHeader="Authorization: Basic $auth" clone --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" src
+          cd src && git checkout --quiet "$GITHUB_SHA"
+
+      # The build machine describes its own toolchain (JAVA_HOME, ANDROID_HOME,
+      # PATH for trivy) in ~/.config/music-hub-release.env, so no machine
+      # paths live in this file.
+      - name: build machine environment
+        run: |
+          f="$HOME/.config/music-hub-release.env"
+          test -r "$f" || { echo "missing $f on the build machine"; exit 1; }
+          grep -E '^[A-Z_]+=' "$f" >> "$GITHUB_ENV"
+          . "$f"; echo "PATH=$PATH" >> "$GITHUB_ENV"
+
+      - name: build image
+        working-directory: src
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          podman build \
+            --build-arg MH_VERSION="$GITHUB_REF_NAME" --build-arg MH_COMMIT="$GITHUB_SHA" \
+            --label org.opencontainers.image.source="https://github.com/$GH_REPO" \
+            --label org.opencontainers.image.version="$tag" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.licenses=MIT \
+            -t "$IMAGE:$tag" .
+          podman save -o "$RUNNER_TEMP/image.tar" "$IMAGE:$tag"
+
+      - name: trivy image scan (no fixable HIGH/CRITICAL)
+        run: |
+          trivy image --input "$RUNNER_TEMP/image.tar" --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          rm -f "$RUNNER_TEMP/image.tar"
+
+      - name: smoke (binary starts and reports its config error)
+        run: |
+          out=$(podman run --rm "$IMAGE:${GITHUB_REF_NAME#v}" 2>&1 || true)
+          echo "$out"
+          echo "$out" | grep -q 'Missing("OIDC_ISSUER")'
+
+      - name: build Android APK
+        working-directory: src/android-shell
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          v="${GITHUB_REF_NAME#v}"
+          IFS=. read -r major minor patch <<EOF
+          $v
+          EOF
+          code=$((major * 10000 + minor * 100 + patch))
+          sed -i -E "s/^( *versionName ).*/\1\"$v\"/; s/^( *versionCode ).*/\1$code/" android/app/build.gradle
+          suffix="-unsigned"
+          if [ -n "$KS_B64" ]; then
+            d=$(mktemp -d); chmod 700 "$d"
+            echo "$KS_B64" | base64 -d > "$d/release.jks"
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$d/release.jks" "$KS_PASS" "$KEY_ALIAS" "$KEY_PASS" > "$d/keystore.properties"
+            export MH_KEYSTORE_PROPERTIES="$d/keystore.properties"
+            suffix=""
+          fi
+          npm ci --no-audit --no-fund
+          npx cap sync android
+          (cd android && ./gradlew --no-daemon -q assembleRelease)
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp "$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)" "$RUNNER_TEMP/dist/music-hub-${v}${suffix}.apk"
+          (cd "$RUNNER_TEMP/dist" && sha256sum ./*.apk > SHA256SUMS && cat SHA256SUMS)
+          [ -n "${d:-}" ] && rm -rf "$d" || true
+
+      - name: push image to ghcr.io
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          printf '%s' "$GH_RELEASE_TOKEN" | podman login ghcr.io -u y0c0ms --password-stdin
+          minor="${tag%.*}"
+          podman tag "$IMAGE:$tag" "$IMAGE:$minor" "$IMAGE:latest"
+          for t in "$tag" "$minor" latest; do podman push "$IMAGE:$t"; done
+          podman logout ghcr.io
+
+      - name: create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          digest=$(skopeo inspect --format '{{.Digest}}' "docker://$IMAGE:${tag#v}" 2>/dev/null || true)
+          notes="Container image: \`$IMAGE:${tag#v}\`${digest:+ (digest \`$digest\`)}.
+
+          Every gate passed for this commit on the project's CI: tests on Postgres 18 with a coverage floor, clippy, cargo and npm audit, secret scan, semgrep, a genuine Gradle wrapper, and a trivy scan with zero fixable HIGH/CRITICAL findings in the published image."
+          gh release create "$tag" "$RUNNER_TEMP/dist"/* --repo "$GH_REPO" --title "$tag" --notes "$notes"

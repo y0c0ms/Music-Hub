@@ -15,7 +15,7 @@ In short:
 
 ## Before you open a pull request
 
-Run the same gates CI runs (`.github/workflows/ci.yml`):
+Run the same gates CI runs (`.forgejo/workflows/ci.yml`):
 
 ```bash
 cargo fmt --all --check
@@ -80,4 +80,4 @@ Do not open a public issue for a vulnerability. Follow [SECURITY.md](SECURITY.md
 ## Releases
 
 Maintainers tag `vX.Y.Z` on a commit whose CI run is green. The tag starts
-`.github/workflows/release.yml`, which builds and publishes the container image.
+`.forgejo/workflows/release.yml` on the maintainer's Forgejo CI, which runs every gate again, then publishes the container image to ghcr.io and the APK to GitHub Releases. Pull requests on GitHub are tested by the maintainer before merge; GitHub Actions is not used.
