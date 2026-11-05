@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark variant. Android selects this whenever the device is in dark mode, which
+      is the same signal the web layer's default "System" theme follows, so the
+      native shell and the page agree without either knowing about the other.
+
+      Slate-950, the value the app shipped with and still uses for its dark page.
+    -->
+    <color name="appBackground">#020617</color>
+
+    <color name="colorPrimary">#020617</color>
+    <color name="colorPrimaryDark">#020617</color>
+    <color name="colorAccent">#0EA5E9</color>
+</resources>

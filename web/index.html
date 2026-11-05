@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- No `class="dark"` here any more: the class is decided by THEME_BOOT below,
+     before the first paint. Hardcoding dark would flash a dark screen at every
+     light-mode user on every launch. -->
+<html lang="en">
+  <head>
+    <!-- THEME_BOOT — must run before the stylesheet paints, so it is inline and
+         first. Duplicated logic with src/lib/theme.js is deliberate: the module
+         cannot help here because it loads with the app bundle, which is already
+         too late to avoid a flash of the wrong theme. Keep the two in step; the
+         storage key is 'mh-theme' and the values are light | dark | system. -->
+    <script>
+      (function () {
+        try {
+          var c = localStorage.getItem("mh-theme") || "system";
+          var dark =
+            c === "dark" ||
+            (c !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.backgroundColor = dark
+            ? "#020617"
+            : "#f8fafc";
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) non-zero on iOS;
+         without it the tab bar sits under the home indicator. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#020617" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Music" />
+    <title>Music Hub</title>
+  </head>
+  <body class="bg-slate-950 text-slate-100 font-sans antialiased">
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

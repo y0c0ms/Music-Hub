@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Music Hub</title>
+    <style>
+      /* This page appears before a server is configured and whenever the server
+         is unreachable, so it cannot ask the app which theme is selected.
+         Following the device is the closest available signal, and matches what
+         the real UI does by default. */
+      :root { color-scheme: light dark; --bg: #f8fafc; --fg: #0f172a; --muted: #475569; --code: #0369a1; --line: #cbd5e1; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #020617; --fg: #e2e8f0; --muted: #94a3b8; --code: #7dd3fc; --line: #334155; }
+      }
+      body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        background: var(--bg); color: var(--fg); text-align: center; padding: 2rem; box-sizing: border-box;
+        font: 15px/1.6 system-ui, -apple-system, sans-serif;
+      }
+      main { width: 100%; max-width: 22rem; }
+      h1 { font-size: 1.1rem; margin: 0 0 .5rem; }
+      p  { color: var(--muted); margin: .25rem 0; }
+      code { color: var(--code); word-break: break-all; }
+      input, button {
+        width: 100%; box-sizing: border-box; height: 2.75rem; border-radius: .6rem; font: inherit; margin-top: .75rem;
+      }
+      input { padding: 0 .75rem; border: 1px solid var(--line); background: transparent; color: var(--fg); }
+      button { border: 0; background: #0ea5e9; color: #fff; font-weight: 600; }
+      button.secondary { background: transparent; color: var(--code); border: 1px solid var(--line); }
+      .error { color: #ef4444; min-height: 1.5em; }
+      [hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Two modes, one page.
+
+      Setup: no server is saved yet, so the app opens here and asks for one.
+      Offline: the native side loads this page with ?offline=1 when the saved
+      server cannot be reached, and it offers a retry or a different server.
+
+      Both talk to the native ServerConfig plugin by navigating to
+      /_musichub/... on this origin; see ServerConfigPlugin.java.
+    -->
+    <main id="setup" hidden>
+      <h1>Connect to your Music Hub</h1>
+      <p>Enter the address of your Music Hub server.</p>
+      <form id="form" novalidate>
+        <input id="url" type="url" inputmode="url" autocomplete="url" autocapitalize="off"
+               spellcheck="false" placeholder="https://music.example.com" required />
+        <p class="error" id="error"></p>
+        <button type="submit">Connect</button>
+      </form>
+    </main>
+
+    <main id="offline" hidden>
+      <h1>Can't reach Music Hub</h1>
+      <p>The app could not connect to <code id="server"></code>.</p>
+      <p>Check your connection (or VPN) and try again.</p>
+      <button id="retry" type="button">Try again</button>
+      <button id="change" type="button" class="secondary">Change server</button>
+    </main>
+
+    <script>
+      (function () {
+        var KEY = 'musicHubServerUrl';
+        var params = new URLSearchParams(window.location.search);
+
+        function go(action, url) {
+          var target = '/_musichub/' + action;
+          if (url) target += '?url=' + encodeURIComponent(url);
+          window.location.href = target;
+        }
+
+        function normalise(raw) {
+          var value = String(raw || '').trim();
+          if (!value) return null;
+          if (!/^[a-z]+:\/\//i.test(value)) value = 'https://' + value;
+          try {
+            var u = new URL(value);
+            if (u.protocol !== 'https:' || !u.hostname) return null;
+            return u.origin + u.pathname.replace(/\/+$/, '');
+          } catch (e) {
+            return null;
+          }
+        }
+
+        if (params.get('offline')) {
+          document.getElementById('offline').hidden = false;
+          document.getElementById('server').textContent = localStorage.getItem(KEY) || 'your server';
+          document.getElementById('retry').addEventListener('click', function () { go('retry'); });
+          document.getElementById('change').addEventListener('click', function () { go('reset'); });
+          return;
+        }
+
+        document.getElementById('setup').hidden = false;
+        var input = document.getElementById('url');
+        input.value = localStorage.getItem(KEY) || '';
+        document.getElementById('form').addEventListener('submit', function (e) {
+          e.preventDefault();
+          var url = normalise(input.value);
+          if (!url) {
+            document.getElementById('error').textContent = 'Enter an https:// address.';
+            return;
+          }
+          // Remembered locally only to prefill this form and name the server on
+          // the offline page; the native side owns the real setting.
+          localStorage.setItem(KEY, url);
+          go('set', url);
+        });
+      })();
+    </script>
+  </body>
+</html>

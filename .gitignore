@@ -1,0 +1,15 @@
+/music-hub
+/web/dist/
+/web/node_modules/
+/android-shell/node_modules/
+/android-shell/android/build/
+/android-shell/android/app/build/
+/android-shell/android/.gradle/
+/android-shell/android/local.properties
+*.apk
+.env
+.env.*
+/target
+**/*.rs.bk
+__pycache__/
+*.pyc

@@ -1,0 +1,7 @@
+# Modularity budget. Cognitive complexity is hard-capped at 20 (denied via the
+# workspace nursery set) because it is the metric SonarQube keys on — keeping it
+# low is what stops a review reporting hundreds of "too complex" code smells.
+# Function LENGTH (~20 lines) is a design guideline, not a hard gate: a genuinely
+# linear function (a wide struct literal, a multi-column SQL bind chain) may run
+# longer, so `too_many_lines` is allowed at the workspace level rather than denied.
+cognitive-complexity-threshold = 20

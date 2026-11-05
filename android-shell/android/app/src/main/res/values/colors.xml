@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The colour the native shell paints before and around the WebView. This file is
+      the LIGHT variant; values-night/colors.xml carries the dark one, and Android
+      picks between them from the device theme.
+
+      It used to be a single hardcoded slate-950 because the web app had no light
+      mode. It does now (Settings > Appearance), so a pinned dark shell would show
+      as a black splash and black system bars wrapped around a white page.
+
+      Values match the web layer exactly: slate-50 here, slate-950 in values-night,
+      the same two the CSS uses for the page background.
+    -->
+    <color name="appBackground">#F8FAFC</color>
+
+    <!-- Referenced by the stock AppTheme that Capacitor generates. -->
+    <color name="colorPrimary">#F8FAFC</color>
+    <color name="colorPrimaryDark">#F8FAFC</color>
+    <color name="colorAccent">#0EA5E9</color>
+</resources>

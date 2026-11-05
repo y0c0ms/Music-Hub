@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only, validated against the system CA store. No CA is bundled.
+
+  A server whose certificate comes from a private CA needs that CA trusted by
+  the app: either rebuild with the CA added here (see android-shell/README.md)
+  or, on a device you control, install it as a user CA and add
+  <certificates src="user" /> below. User CAs are NOT trusted by default
+  because doing so would let any user-installed certificate intercept this
+  app's traffic.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

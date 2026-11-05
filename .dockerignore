@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+*.md
+web/node_modules
+web/dist
+music-hub
+/target
+android-shell
+docs
+scripts

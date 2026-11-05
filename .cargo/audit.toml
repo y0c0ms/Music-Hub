@@ -1,0 +1,11 @@
+# cargo audit exceptions. Each needs a reason that stays true; review on every
+# dependency bump.
+[advisories]
+ignore = [
+  # rsa 0.9 (Marvin attack): key recovery from timing of PRIVATE-key
+  # decryption/signing. No patched release exists. Reached only through
+  # openidconnect, which uses RsaPublicKey to verify the identity provider's
+  # ID-token signatures (openidconnect-4.1.0/src/core/crypto.rs); this server
+  # holds no RSA private key and never decrypts or signs with RSA.
+  "RUSTSEC-2023-0071",
+]

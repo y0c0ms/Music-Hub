@@ -1,0 +1,18 @@
+[package]
+name = "mh-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+# For tls::client_builder - see that module for why webpki-roots forces this.
+reqwest = { workspace = true }

@@ -1,0 +1,24 @@
+diff --git a/node_modules/@jofr/capacitor-media-session/android/src/main/java/io/github/jofr/capacitor/mediasessionplugin/MediaSessionService.java b/node_modules/@jofr/capacitor-media-session/android/src/main/java/io/github/jofr/capacitor/mediasessionplugin/MediaSessionService.java
+index cb0417f..f0f1a5d 100644
+--- a/node_modules/@jofr/capacitor-media-session/android/src/main/java/io/github/jofr/capacitor/mediasessionplugin/MediaSessionService.java
++++ b/node_modules/@jofr/capacitor-media-session/android/src/main/java/io/github/jofr/capacitor/mediasessionplugin/MediaSessionService.java
+@@ -114,11 +114,17 @@ public class MediaSessionService extends Service {
+           startForeground(NOTIFICATION_ID, notificationBuilder.build());
+         }
+ 
++        // Upstream passed (ACTION_PLAY_PAUSE | ACTION_PLAY) here. buildMediaButtonPendingIntent
++        // resolves its argument through PlaybackStateCompat.toKeyCode(), which is a chain of
++        // equality tests against single constants - an OR of two bits matches none of them, so it
++        // returns KEYCODE_UNKNOWN and the pending intent comes back null. The button then renders
++        // and does nothing. Every other action here passes a single constant, which is exactly why
++        // next/previous/seek worked from the lockscreen while play and pause did not.
+         notificationActions.put("play", new NotificationCompat.Action(
+-                R.drawable.ic_baseline_play_arrow_24, "Play", MediaButtonReceiver.buildMediaButtonPendingIntent(this, (PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY))
++                R.drawable.ic_baseline_play_arrow_24, "Play", MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
+         ));
+         notificationActions.put("pause", new NotificationCompat.Action(
+-                R.drawable.ic_baseline_pause_24, "Pause", MediaButtonReceiver.buildMediaButtonPendingIntent(this, (PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PAUSE))
++                R.drawable.ic_baseline_pause_24, "Pause", MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
+         ));
+         notificationActions.put("seekbackward", new NotificationCompat.Action(
+                 R.drawable.ic_baseline_replay_30_24, "Previous Track", MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_REWIND)

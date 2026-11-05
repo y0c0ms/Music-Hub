@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.y0c0ms.musichub",
+  "appName": "Music Hub",
+  "webDir": "www",
+  "server": {
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

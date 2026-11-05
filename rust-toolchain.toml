@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned deliberately; bump in lockstep with the Dockerfile `rust:` base and the
+# CI runner image so local, CI, and the release image share one clippy lint set.
+channel = "1.94.0"
+components = ["clippy", "rustfmt", "llvm-tools-preview"]
+profile = "minimal"

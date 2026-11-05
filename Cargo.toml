@@ -1,0 +1,85 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/db",
+    "crates/media",
+    "crates/server",
+    "crates/bin",
+    "crates/migrate",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+
+# Enforced across every crate via `[lints] workspace = true`. `#![forbid(unsafe_code)]`
+# is also written at each crate root for explicitness; forbidding twice is a no-op.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# doc_markdown is noise here: prose docs are full of product names (YouTube,
+# LibriVox, ListenBrainz, Keycloak, Navidrome, Postgres) that are not code
+# identifiers, so backticking every one adds nothing. Silenced deliberately.
+doc_markdown = "allow"
+# Function length is a guideline, not a hard gate (see clippy.toml); cognitive
+# complexity stays denied, which is the smell that actually matters.
+too_many_lines = "allow"
+# Test modules opt back out with `#![allow(clippy::unwrap_used, ...)]`.
+
+[workspace.dependencies]
+# internal
+mh-core = { path = "crates/core" }
+mh-db = { path = "crates/db" }
+mh-media = { path = "crates/media" }
+mh-server = { path = "crates/server" }
+# runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "fs", "signal", "sync", "time", "io-util"] }
+tokio-stream = { version = "0.1", features = ["sync", "time"] }
+futures = "0.3"
+async-trait = "0.1"
+# http
+axum = { version = "0.7", features = ["macros"] }
+axum-extra = { version = "0.9", features = ["cookie"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# storage
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "chrono", "uuid"] }
+pgvector = { version = "0.4", default-features = false, features = ["sqlx"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+# ser/de + util
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+sha2 = "0.10"
+rand = "0.8"
+regex = "1"
+nix = { version = "0.30", features = ["fs"] }
+mime_guess = "2"
+rust-embed = { version = "8" }
+# observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# auth
+# `reqwest` only implements oauth2's `AsyncHttpClient` for our reqwest 0.12;
+# it adds no TLS backend of its own (default-features off upstream).
+openidconnect = { version = "4.1", default-features = false, features = ["reqwest"] }
+
+[profile.release]
+# thin LTO gives cross-crate inlining cheaply. codegen-units is left at the
+# default (16) deliberately: forcing it to 1 serialises codegen for ~1% runtime
+# gain this I/O-bound service never notices, while making the build several times
+# slower on an already core-starved cluster. Build time is the scarce resource.
+lto = "thin"
+strip = true

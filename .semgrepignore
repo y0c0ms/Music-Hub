@@ -1,0 +1,7 @@
+# Semgrep scans only the code that is built, tested and shipped by the server
+# pipeline.
+#
+# android-shell/ - a Capacitor wrapper, built by its own Gradle toolchain
+#   rather than the server pipeline. Its exported launcher activity is the one
+#   Android requires.
+android-shell/

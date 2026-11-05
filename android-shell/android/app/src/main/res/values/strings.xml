@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Music Hub</string>
+    <string name="title_activity_main">Music Hub</string>
+    <string name="package_name">io.github.y0c0ms.musichub</string>
+    <string name="custom_url_scheme">io.github.y0c0ms.musichub</string>
+</resources>
