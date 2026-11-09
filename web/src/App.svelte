@@ -35,7 +35,9 @@
     offlineBoot = false;
     gate.set('loading');
     try {
-      user = await api.me();
+      // Short fuse: with no server there is nothing to wait for, and the
+      // offline screen (the music on this device) is behind this call.
+      user = await api.me({ timeoutMs: api.BOOT_TIMEOUT_MS });
       gate.set(user.navidromeLinked ? 'ready' : 'unlinked');
     } catch (err) {
       // A 401 already moved the gate to signedOut. Anything else means the
