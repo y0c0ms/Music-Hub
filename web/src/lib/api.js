@@ -399,16 +399,26 @@ export const dislike = (card) => swipe('dislike', card);
  * Returns { stale, state }.
  */
 export async function playbackCommand(cmd) {
-  const res = await fetch('/api/playback/command', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(cmd),
-    // The same deadline as every other request: a tap that hangs on a dead
-    // link is the "it takes minutes to change a song" report of 2026-11-09.
-    // `lib/player.js` keeps its own retry ladder; it needs a failure to climb.
-    signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
-  });
+  // An explicit controller rather than `AbortSignal.timeout`: that helper needs
+  // Chrome 103+, and on an older Android WebView it would throw on every tap
+  // and push every command down the local-fallback path.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), COMMAND_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch('/api/playback/command', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cmd),
+      // The same deadline as every other request: a tap that hangs on a dead
+      // link is the "it takes minutes to change a song" report of 2026-11-09.
+      // `lib/player.js` keeps its own retry ladder; it needs a failure to climb.
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (res.status === 409) return { stale: true, state: await res.json() };
   if (!res.ok) throw new ApiError(res.status, '', 'playback command failed');
   return { stale: false, state: await res.json() };

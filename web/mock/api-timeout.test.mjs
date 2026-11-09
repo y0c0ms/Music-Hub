@@ -66,10 +66,30 @@ assert.equal(
   'a search the user typed over must still look like an abort, not an outage',
 );
 
+// --- a tap cannot hang either -------------------------------------------------
+
+let commandAborted = false;
+globalThis.fetch = (_path, init) =>
+  new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => {
+      commandAborted = true;
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+  });
+const cmdStart = Date.now();
+await assert.rejects(
+  () => api.playbackCommand({ action: 'next', deviceId: 'd', version: 1 }),
+  (err) => err.name === 'AbortError',
+  'a playback command on a dead link must fail so the retry ladder can run',
+);
+const cmdTook = Date.now() - cmdStart;
+assert.ok(cmdTook < 6000, `the command deadline must be bounded, took ${cmdTook}ms`);
+assert.ok(commandAborted, 'the command request must be aborted');
+
 // --- an ordinary answer is untouched ------------------------------------------
 
 globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
 assert.deepEqual(await api.me({ timeoutMs: 60 }), { ok: true });
 
 restore();
-console.log('api timeout: 3 PASS');
+console.log('api timeout: 4 PASS');
