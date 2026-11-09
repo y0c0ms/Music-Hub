@@ -35,8 +35,53 @@ async function body(res) {
   }
 }
 
-async function request(path, { method = 'GET', json, signal } = {}) {
-  const init = { method, credentials: 'include', signal };
+/**
+ * How long one request may take before it is abandoned.
+ *
+ * A request that is neither answered nor refused is the case a phone hits most:
+ * wifi associated, server unreachable. `fetch` then waits for the OS TCP
+ * timeout, which is minutes. Nothing in the UI can tell that apart from a slow
+ * server, so the boot spinner spun forever and the offline screen — the one
+ * thing that works without a server — could not be reached at all. Reported
+ * 2026-11-09 ("it tries to connect to the server forever and just hangs").
+ *
+ * The server answers in well under a second on the LAN, so this is generous.
+ */
+const REQUEST_TIMEOUT_MS = 8000;
+
+/**
+ * Boot asks whether there is a server at all, and the answer decides between
+ * the app and the offline screen. It gets a shorter fuse: waiting 8s behind a
+ * spinner before offering the music already on the device is itself the bug.
+ */
+export const BOOT_TIMEOUT_MS = 5000;
+
+/**
+ * A transport command is a tap. `lib/player.js` retries three times with its own
+ * backoff before falling back to the device's own music, so the whole ladder
+ * multiplies this figure: at 8s a dead link meant ~36s before a tap did
+ * anything. 4s keeps the ladder under 20s and still leaves room for a slow
+ * server, which answers in milliseconds here.
+ */
+const COMMAND_TIMEOUT_MS = 4000;
+
+async function request(path, { method = 'GET', json, signal, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+  // One controller for both deadlines: the caller's signal (a search being
+  // typed over) and the timeout. The caller's abort must stay an AbortError so
+  // it can be ignored; a timeout is a dead link and must not look like one.
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const onAbort = () => ctrl.abort();
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeoutMs);
+
+  const init = { method, credentials: 'include', signal: ctrl.signal };
   if (json !== undefined) {
     init.headers = { 'Content-Type': 'application/json' };
     init.body = JSON.stringify(json);
@@ -46,8 +91,11 @@ async function request(path, { method = 'GET', json, signal } = {}) {
   try {
     res = await fetch(path, init);
   } catch (err) {
-    if (err?.name === 'AbortError') throw err;
+    if (err?.name === 'AbortError' && !timedOut) throw err;
     throw new ApiError(0, 'offline', 'Cannot reach the server');
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 
   if (res.ok) return res.status === 204 ? null : body(res);
@@ -72,7 +120,8 @@ async function request(path, { method = 'GET', json, signal } = {}) {
 export const LOGIN_URL = '/auth/login';
 
 /** @returns {Promise<{username,displayName,navidromeUser,navidromeLinked}>} */
-export const me = () => request('/api/me');
+/** @param {{timeoutMs?: number}} [opts] boot passes [`BOOT_TIMEOUT_MS`]. */
+export const me = (opts) => request('/api/me', opts);
 
 export const link = (username, password) =>
   request('/api/link', { method: 'POST', json: { username, password } });
@@ -355,6 +404,10 @@ export async function playbackCommand(cmd) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(cmd),
+    // The same deadline as every other request: a tap that hangs on a dead
+    // link is the "it takes minutes to change a song" report of 2026-11-09.
+    // `lib/player.js` keeps its own retry ladder; it needs a failure to climb.
+    signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
   });
   if (res.status === 409) return { stale: true, state: await res.json() };
   if (!res.ok) throw new ApiError(res.status, '', 'playback command failed');
