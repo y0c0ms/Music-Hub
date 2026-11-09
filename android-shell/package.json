@@ -4,14 +4,14 @@
   "version": "1.0.0",
   "description": "Android shell around the approved music-hub PWA",
   "dependencies": {
-    "@capacitor/android": "^6.2.3",
-    "@capacitor/app": "^6.0.3",
-    "@capacitor/core": "^6.2.3",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
     "@jofr/capacitor-media-session": "^4.0.0"
   },
   "devDependencies": {
     "patch-package": "^8.0.1",
-    "@capacitor/cli": "^6.2.3"
+    "@capacitor/cli": "^8.6.0"
   },
   "scripts": {
     "postinstall": "patch-package"
