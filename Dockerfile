@@ -14,7 +14,7 @@ ARG MH_COMMIT=unknown
 # --- 1. PWA -------------------------------------------------------------------
 # Base images are pinned by digest so a rebuild of the same commit uses the same
 # bytes; Dependabot (docker ecosystem) proposes digest updates.
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS web
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 # npm ci installs exactly the committed lockfile (integrity hashes included) and
@@ -29,7 +29,7 @@ ENV MH_VERSION=${MH_VERSION} MH_COMMIT=${MH_COMMIT}
 RUN npm run build
 
 # --- 2. Rust binary (musl, PWA embedded) --------------------------------------
-FROM rust:1.94-alpine@sha256:77237dd363a0b127bb5ef532c2d64c0deb380b738e43a9c4bdac73398d6d0a08 AS build
+FROM rust:1.99-alpine@sha256:44819b27be4c97b0e4d7203bd2e02c4820f97700211b6a37fb4c246a2de59383 AS build
 # build-base gives gcc + musl-dev, which ring (via reqwest/sqlx rustls) needs.
 RUN apk add --no-cache build-base
 WORKDIR /src
@@ -55,7 +55,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # 3.21 reached end of life and carried 1 critical + 23 high CVEs (trivy,
 # 2026-11-05); 3.24 with `apk upgrade` scans clean. The release workflow scans
 # the built image and refuses to publish on any fixable HIGH/CRITICAL.
-FROM alpine:3.24@sha256:ce9e1e6d23f04a0b7593445a062a9fc73ed52f8260b9396f77a958295ad18ee7
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 # yt-dlp comes from pip, NOT apk: Alpine's package lags and YouTube rejects it.
 # mutagen is REQUIRED — yt-dlp's --embed-thumbnail refuses to run on Opus
 # without it, and the tag rewrite shells to python3 + mutagen because ffmpeg's
